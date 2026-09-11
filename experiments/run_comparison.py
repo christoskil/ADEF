@@ -1,14 +1,3 @@
-"""
-Comparison Experiment: ADEF vs Baselines
-===========================================
-Runs ADEF (full integrated pipeline) and all four baselines on the
-same dataset and prints a comparison table matching Table 2 of the
-paper (storage ratio, reconstruction MSE, anomaly recall, fault F1,
-mean detection delay).
-
-Usage:
-    python experiments/run_comparison.py [--N 20] [--T 2016] [--seed 42]
-"""
 
 import sys
 import os
