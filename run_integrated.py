@@ -1,29 +1,3 @@
-"""
-Integrated ADEF Pipeline
-==========================
-Runs all four ADEF components together as a single closed feedback
-loop, exactly as described in Section 4 / Fig. 1-2 of the paper:
-
-  Component 1 (Local Predictive Model) decides what to store.
-  Component 2 (Correctness Propagation) resolves inter-node conflicts
-    every `prop_every` steps, using Component 4's quarantine set to
-    exclude faulty nodes from propagation.
-  Component 3 (Temporal Debt) issues proactive sensing commitments
-    based on each node's HMM forecast, also respecting quarantine.
-  Component 4 (Surprise Classification + Quarantine) classifies every
-    stored surprise event and feeds its quarantine decisions back into
-    Components 1-3.
-
-Default parameters below are the tuned values used in the paper's
-reported results (Table 2): storage ratio 25.8%, MSE 2.063,
-anomaly recall 1.000, fault F1 0.364, mean detection delay 53 steps.
-
-Note: this is a faithful, from-scratch reference implementation of the
-methodology and parameters described in the paper. Exact reproduction
-of every reported decimal is not guaranteed (e.g. due to differences
-in random-number-generator call order versus the original research
-code), but the qualitative behaviour and approximate magnitudes match.
-"""
 
 import sys
 import os
@@ -45,7 +19,6 @@ def run_integrated(N: int = 20, T: int = 2016, seed: int = 42, verbose: bool = T
     data, ground_truth = gen.generate(events)
     positions = np.array([[n.x, n.y] for n in nodes])
 
-    # ── Initialise all components (tuned parameters, Section 5) ──────────
     fields = [ExpectationField(i, n_components=3, dim=2,
                                 alpha=0.05, eps_base=2.0)
               for i in range(N)]
@@ -62,7 +35,7 @@ def run_integrated(N: int = 20, T: int = 2016, seed: int = 42, verbose: bool = T
     quarantine = QuarantineManager(N, fault_streak=5,
                                     recovery_window=40, alignment_thresh=2.5)
 
-    # ── Per-step logs ─────────────────────────────────────────────────────
+
     storage_log = np.zeros((N, T), dtype=bool)
     deviation_log = np.zeros((N, T))
     threshold_log = np.zeros((N, T))
@@ -85,31 +58,29 @@ def run_integrated(N: int = 20, T: int = 2016, seed: int = 42, verbose: bool = T
             is_q = quarantine.is_quarantined(i)
             quarantine_state_log[i, t] = is_q
 
-            # Component 2: update correctness tracker with spatial agreement
+
             active_neigh = prop.active_neighbors(i, quarantine.quarantined)
             neighbor_readings = [data[j, t, :] for j in active_neigh]
             agreement = trackers[i].compute_spatial_agreement(pred, neighbor_readings)
             conf = trackers[i].update(t, dev, thresholds_t[i], agreement)
 
-            # Component 3: HMM update + possible debt issuance (skip if quarantined)
+
             if not is_q:
                 decoded, p_anom, issued = debt_mgr.step(t, i, dev, thresholds_t[i])
 
-            # Component 4: classify stored surprises, update quarantine
             if stored:
                 cls = classifier.classify(i, t, x, neighbor_readings, conf)
                 classification_log[(i, t)] = cls
                 quarantine.update_classification(t, i, cls)
 
-            # Quarantine recovery check (Eq. recovery)
+
             if is_q:
                 neighbor_preds = [fields[j].ema for j in active_neigh]
                 quarantine.update_alignment(t, i, fields[i].ema, neighbor_preds)
 
-        # Settle any Temporal Debts due at this step
         debt_mgr.settle_due_debts(t, deviations_t, thresholds_t)
 
-        # Component 2: periodic conflict resolution across the network
+
         if t % 5 == 0:
             prop.step(t, fields, trackers, quarantine.quarantined)
 
@@ -133,9 +104,6 @@ def run_integrated(N: int = 20, T: int = 2016, seed: int = 42, verbose: bool = T
 
 
 def compute_all_metrics(r: dict) -> dict:
-    """Aggregate the five headline metrics reported in Table 2:
-    storage ratio, reconstruction MSE, anomaly recall (early-warning),
-    fault F1/precision/recall, and mean detection delay."""
     fields = r["fields"]
     ground_truth = r["ground_truth"]
     nodes = r["nodes"]
@@ -149,8 +117,6 @@ def compute_all_metrics(r: dict) -> dict:
     fault_map = {n.node_id: (n.fault_start, n.fault_end, n.fault_type)
                  for n in nodes if n.fault_type is not None}
 
-    # Anomaly recall: fraction of injected events/faults for which a
-    # Temporal Debt was issued to (or by) an affected node before/at onset.
     flagged_nodes = quarantine.quarantined | {
         e["node"] for e in quarantine.quarantine_events if e["event"] == "enter"
     }
@@ -162,7 +128,7 @@ def compute_all_metrics(r: dict) -> dict:
     from components.baselines import _fault_metrics
     prec, rec, f1, delay = _fault_metrics(fault_map, flagged_nodes, detection_times)
 
-    n_events = len(fault_map) + 2  # + fire + heat_wave, approximate coverage denom
+    n_events = len(fault_map) + 2  
     anomaly_recall = 1.0 if debt_mgr.debts_total > 0 else 0.0
 
     return {
