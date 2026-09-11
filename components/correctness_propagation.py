@@ -1,19 +1,4 @@
-"""
-Component 2: Correctness Propagation
-======================================
-Implements the paper's Section 4.2 (Eqs. 7-10):
-  - A temporally-decayed, spatially-adjusted Confidence Signal C_i(t)
-    (Eq. 7) combining prediction accuracy (phi) and spatial agreement
-    (rho, Eq. 7a).
-  - Conflict detection between neighboring nodes' EMA predictions
-    (Eq. 8).
-  - Confidence-weighted, partial parameter blending toward the
-    higher-confidence node upon conflict (Eq. 9).
 
-Default parameters match the tuned values used in the paper's
-integrated pipeline: window=80, lam=0.03, comm_radius=2.0,
-conflict_threshold=1.5, blend_rate=0.25.
-"""
 
 import numpy as np
 from collections import deque
@@ -21,10 +6,6 @@ from typing import List, Dict
 
 
 class CorrectnessTracker:
-    """
-    Maintains the sliding-window correctness history and confidence
-    signal C_i(t) for a single node (Eq. 7).
-    """
 
     def __init__(self, node_id: int, window: int = 80, lam: float = 0.03,
                  gamma: float = 2.0, rho_min: float = 0.3,
@@ -43,11 +24,7 @@ class CorrectnessTracker:
 
     def update(self, t: int, deviation: float, threshold: float,
                spatial_agreement: float = 1.0):
-        """
-        Record whether this step's prediction was within the relaxed
-        correctness criterion (phi_i, using gamma to account for EMA
-        lag), together with the spatial agreement factor rho_i(t).
-        """
+
         correct = 1 if deviation <= (threshold * self.gamma) else 0
         self._correct_flags.append(correct)
         self._timestamps.append(t)
@@ -58,7 +35,6 @@ class CorrectnessTracker:
         return conf
 
     def confidence(self, t: int) -> float:
-        """Confidence Signal C_i(t), Eq. 7."""
         if not self._timestamps:
             return 0.5
         ts = np.array(self._timestamps)
@@ -71,8 +47,6 @@ class CorrectnessTracker:
 
     def compute_spatial_agreement(self, own_pred: np.ndarray,
                                    neighbor_readings: List[np.ndarray]) -> float:
-        """rho_i(tau), Eq. (spatial agreement), given the node's own EMA
-        prediction and the actual readings of non-quarantined neighbors."""
         if not neighbor_readings:
             return self.rho_min
         agrees = [1 if np.linalg.norm(own_pred - xj) < self.theta_rho else 0
@@ -82,11 +56,7 @@ class CorrectnessTracker:
 
 
 class ConfidencePropagator:
-    """
-    Handles periodic broadcast, conflict detection between neighboring
-    nodes' EMA predictions, and confidence-weighted partial parameter
-    blending (Eqs. 8-9).
-    """
+
 
     def __init__(self, positions: np.ndarray, comm_radius: float = 2.0,
                  conflict_threshold: float = 1.5, blend_rate: float = 0.25):
@@ -113,10 +83,7 @@ class ConfidencePropagator:
 
     def step(self, t: int, fields: list, trackers: List[CorrectnessTracker],
               quarantined: set = None):
-        """
-        Broadcast EMA predictions + confidence, detect conflicts (Eq. 8),
-        and resolve them via confidence-weighted blending (Eq. 9).
-        """
+
         quarantined = quarantined or set()
         for i in range(self.N):
             if i in quarantined:
