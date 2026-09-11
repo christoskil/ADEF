@@ -1,21 +1,4 @@
-"""
-Component 4: Unexpected Classification with Sensor Quarantine
-================================================================
-Implements the paper's Section 4.4 (Eqs. 14-16):
-  - Spatial agreement feature A_i(t) (Eq. 14).
-  - Confidence trend Delta C_i(t) via windowed linear regression
-    (Eq. 15).
-  - The three-way classification rule (REAL_EVENT / TRANSIENT /
-    SENSOR_FAULT) combining A_i, C_i, Delta C_i (Eq. 16 / classifier).
-  - A QuarantineManager tracking consecutive-fault streaks (kappa) and
-    the recovery condition for exiting quarantine (Eq. "recovery").
 
-Default parameters match the tuned values used in the paper's
-integrated pipeline: theta_agree=0.15, theta_conf=0.20,
-theta_conf_high=0.55, theta_delta=0.04, conf_window=20,
-fault_streak (kappa) = 5, recovery_window (W_q) = 40,
-alignment_thresh (theta_align) = 2.5.
-"""
 
 import numpy as np
 from enum import IntEnum
@@ -37,11 +20,6 @@ CLASS_NAMES = {
 
 
 class SurpriseClassifier:
-    """
-    Stateless-per-call classifier implementing the paper's classification
-    rule (Eq. 16). Confidence-trend estimation keeps a short per-node
-    history internally.
-    """
 
     def __init__(self, theta_agree: float = 0.15, theta_conf: float = 0.20,
                  theta_conf_high: float = 0.55, theta_delta: float = 0.04,
@@ -56,7 +34,6 @@ class SurpriseClassifier:
 
     def spatial_agreement(self, own_reading: np.ndarray,
                            neighbor_readings: List[np.ndarray]) -> float:
-        """A_i(t), Eq. 14."""
         if not neighbor_readings:
             return 0.5
         agrees = [1 if np.linalg.norm(own_reading - xj) < self.theta_A_dist else 0
@@ -64,8 +41,7 @@ class SurpriseClassifier:
         return sum(agrees) / len(agrees)
 
     def confidence_trend(self, node_id: int, t: int, confidence: float) -> float:
-        """Delta C_i(t), Eq. 15: linear-regression slope of C_i over
-        the last W_delta steps."""
+
         hist = self._conf_hist[node_id]
         hist.append((t, confidence))
         if len(hist) < 3:
@@ -82,7 +58,6 @@ class SurpriseClassifier:
     def classify(self, node_id: int, t: int, own_reading: np.ndarray,
                  neighbor_readings: List[np.ndarray], confidence: float
                  ) -> SurpriseClass:
-        """Classification rule, Eq. 16."""
         A = self.spatial_agreement(own_reading, neighbor_readings)
         C = confidence
         dC = self.confidence_trend(node_id, t, confidence)
@@ -95,10 +70,6 @@ class SurpriseClassifier:
 
 
 class QuarantineManager:
-    """
-    Tracks consecutive SENSOR_FAULT streaks per node and manages
-    quarantine entry/exit according to the recovery condition.
-    """
 
     def __init__(self, N: int, fault_streak: int = 5,
                  recovery_window: int = 40, alignment_thresh: float = 2.5):
@@ -126,8 +97,7 @@ class QuarantineManager:
 
     def update_alignment(self, t: int, node_id: int, own_pred: np.ndarray,
                           neighbor_preds: List[np.ndarray]):
-        """Called every step for quarantined nodes to evaluate the
-        recovery condition (Eq. 'recovery')."""
+
         if node_id not in self.quarantined:
             return
         if not neighbor_preds:
