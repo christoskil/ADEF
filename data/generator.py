@@ -1,20 +1,3 @@
-"""
-Synthetic IoT Sensor Data Generator
-====================================
-Generates realistic 2D (temperature, humidity) sensor readings for a
-network of N spatially-distributed nodes, following diurnal cycles with
-spatially-correlated noise. Supports injection of real environmental
-events (affecting all/nearby nodes) and sensor faults (affecting single
-nodes), matching the experimental setup described in Section 5.1 of
-the ADEF paper.
-
-Default scenario (matches the paper):
-  N = 20 nodes, 10x10 km area, sensing radius r = 2.0 km
-  T = 2016 steps (7 days at 5-minute resolution)
-  Events: fire (t=800-950, +8C, local), heat wave (t=1400-1600, +3C, global)
-  Faults: spike (node, t=400-600), drift (node, t=1000-1200),
-          dead sensor (node, t=1500-1700)
-"""
 
 import numpy as np
 from dataclasses import dataclass, field
@@ -43,12 +26,6 @@ class EventSpec:
 
 
 class IoTDataGenerator:
-    """
-    Generates correlated (temperature, humidity) time series for a set
-    of spatially deployed nodes, with diurnal cycles and injectable
-    events / faults.
-    """
-
     def __init__(self, nodes: List[NodeInfo], T: int,
                  base_temp: float = 22.0, temp_amplitude: float = 6.0,
                  base_humidity: float = 55.0, humidity_amplitude: float = 12.0,
@@ -76,20 +53,10 @@ class IoTDataGenerator:
         return temp, hum
 
     def generate(self, events: List[EventSpec]) -> Tuple[np.ndarray, np.ndarray]:
-        """
-        Returns:
-            data:         (N, T, 2) array of *measured* (possibly faulty)
-                          readings, as would be received by each node.
-            ground_truth: (N, T, 2) array of the true underlying signal
-                          (no sensor faults injected -- used to score
-                          reconstruction quality on healthy nodes).
-        """
         N, T = self.N, self.T
         data = np.zeros((N, T, 2))
         ground_truth = np.zeros((N, T, 2))
 
-        # One shared spatial random-walk offset per node (correlated drift
-        # for nodes that are physically close), plus i.i.d. measurement noise.
         node_offset = self.rng.normal(0, 1.0, size=(N, 2))
 
         for t in range(T):
@@ -99,7 +66,6 @@ class IoTDataGenerator:
                 temp = base_temp + node_offset[i, 0] * 0.5
                 hum = base_hum + node_offset[i, 1] * 0.5
 
-                # Apply events (real environmental phenomena)
                 for ev in events:
                     if ev.start <= t <= ev.end:
                         if ev.kind == "global":
@@ -110,15 +76,12 @@ class IoTDataGenerator:
                             if dist <= (ev.radius or 0.0):
                                 temp += ev.delta_temp
 
-                # Spatially-correlated slow drift
                 node_offset[i] += self.rng.normal(0, self.spatial_noise_std * 0.02, size=2)
 
-                # Ground truth (no sensor fault applied)
                 gt_reading = np.array([temp, hum]) + self.rng.normal(
                     0, self.measurement_noise_std, size=2)
                 ground_truth[i, t, :] = gt_reading
 
-                # Measured reading (fault applied if within this node's fault window)
                 reading = gt_reading.copy()
                 if (node.fault_type is not None and
                         node.fault_start is not None and
@@ -144,19 +107,12 @@ class IoTDataGenerator:
 def build_default_scenario(N: int = 20, T: int = 2016, seed: int = 42,
                             area_km: float = 10.0, sensing_radius_km: float = 2.0
                             ) -> Tuple[IoTDataGenerator, List[EventSpec], List[NodeInfo]]:
-    """
-    Builds the default N=20, T=2016 scenario described in Section 5.1:
-    a fire event, a heat wave, and three fault types (spike/drift/dead)
-    injected into three distinct nodes; all other nodes remain healthy.
-    """
     rng = np.random.default_rng(seed)
     positions = rng.uniform(0, area_km, size=(N, 2))
 
     nodes = [NodeInfo(node_id=i, x=positions[i, 0], y=positions[i, 1])
              for i in range(N)]
 
-    # Inject three fault types into three distinct nodes (never node 0,
-    # kept healthy as a reference node in plots)
     fault_node_ids = [1, 2, 3] if N > 3 else list(range(min(3, N)))
     fault_specs = [
         ("spike", 400, 600),
