@@ -1,20 +1,3 @@
-"""
-Baseline Methods
-==================
-Implements the four baselines compared against ADEF in Section 5:
-  - Store-All: trivial upper bound, no compression.
-  - LEACH: probabilistic cluster-head election with round-based
-    rotation; only heads transmit, members reconstruct from the
-    cluster aggregate.
-  - Threshold-Based Detection: running z-score gate.
-  - Distributed Autoencoder (WAFL-style): per-node lightweight
-    autoencoder trained online via SGD, with collaborative threshold
-    sharing among neighbors.
-
-Each baseline exposes a common `run(...)` interface returning a
-BaselineResult with the same metrics reported for ADEF, so that all
-methods can be placed side-by-side in the comparison table.
-"""
 
 import numpy as np
 from dataclasses import dataclass, field
@@ -67,8 +50,7 @@ class StoreAllBaseline:
 
 
 class LEACHBaseline:
-    """Probabilistic cluster-head election; heads transmit full values,
-    members' readings are reconstructed from their head's value."""
+
     name = "LEACH"
 
     def __init__(self, cluster_head_prob: float = 0.15, round_length: int = 20,
@@ -178,9 +160,6 @@ class ThresholdBaseline:
 
 
 class DistributedAutoencoderBaseline:
-    """Per-node lightweight autoencoder (dim -> hidden -> dim) trained
-    online via SGD; anomalies stored when reconstruction error exceeds
-    a collaboratively-shared adaptive threshold (WAFL-style)."""
     name = "Distributed Autoencoder (WAFL-style)"
 
     def __init__(self, hidden: int = 4, lr: float = 0.01,
