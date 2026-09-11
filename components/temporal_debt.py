@@ -1,20 +1,3 @@
-"""
-Component 3: Temporal Debt
-============================
-Implements the paper's Section 4.3 (Eqs. 11-13):
-  - A three-state HMM (NORMAL, TRANSITION, ANOMALY) per node, updated
-    online, decoded via the forward algorithm.
-  - k-step-ahead ANOMALY probability forecasting (Eq. 12).
-  - Debt issuance when the forecast exceeds theta_debt (TRANSITION
-    state) or a reduced mu*theta_debt (early ANOMALY state), per the
-    paper's Section 4.3 discussion of the dual trigger condition.
-  - Debt acceptance by the neighbor with the lowest current debt load,
-    subject to a per-node cooldown that bounds sensing overhead.
-
-Default parameters match the tuned values used in the paper's
-integrated pipeline: lookahead_k=20, debt_threshold=0.30,
-max_debt_load=3.
-"""
 
 import numpy as np
 from enum import IntEnum
@@ -35,10 +18,6 @@ class DevLevel(IntEnum):
 
 
 class TemporalDebtManager:
-    """
-    Manages the per-node HMM state estimation and the network-wide
-    issuance/acceptance/settlement of Temporal Debts.
-    """
 
     def __init__(self, positions: np.ndarray, comm_radius: float = 2.0,
                  lookahead_k: int = 20, debt_threshold: float = 0.30,
@@ -82,7 +61,7 @@ class TemporalDebtManager:
 
     @staticmethod
     def _init_transition() -> np.ndarray:
-        # Designed prior: stay NORMAL most of the time, transitions are rare.
+
         return np.array([
             [0.95, 0.04, 0.01],
             [0.30, 0.50, 0.20],
@@ -91,7 +70,7 @@ class TemporalDebtManager:
 
     @staticmethod
     def _init_emission() -> np.ndarray:
-        # Rows = hidden state, cols = discretized deviation level (LOW/MED/HIGH)
+
         return np.array([
             [0.85, 0.13, 0.02],   # NORMAL -> mostly LOW deviation
             [0.30, 0.50, 0.20],   # TRANSITION -> mixed
@@ -107,25 +86,21 @@ class TemporalDebtManager:
         return DevLevel.HIGH
 
     def _forward_update(self, i: int, obs: DevLevel):
-        """One step of the forward algorithm (unnormalized -> normalized)."""
+
         A, B = self.A[i], self.B[i]
         pred = self.alpha[i] @ A
         likelihood = B[:, int(obs)]
         new_alpha = pred * likelihood
         total = new_alpha.sum()
         self.alpha[i] = new_alpha / total if total > 1e-12 else pred
-        # light online adaptation of the emission row for the decoded state
+
         decoded = int(np.argmax(self.alpha[i]))
         B[decoded] = 0.97 * B[decoded]
         B[decoded, int(obs)] += 0.03
         B[decoded] /= B[decoded].sum()
 
     def predict_anomaly_prob(self, i: int, k: int = None) -> float:
-        """P(ANOMALY_{t+k} | lambda_i), Eq. 12. Defaults to the shorter
-        forecast_horizon (rather than the full commitment horizon) since
-        forecasting many steps ahead washes out to the chain's stationary
-        distribution and loses predictive power -- see Parameter
-        Sensitivity discussion in the paper."""
+
         k = k or self.forecast_h
         Ak = np.linalg.matrix_power(self.A[i], k)
         probs = self.alpha[i] @ Ak
@@ -133,10 +108,7 @@ class TemporalDebtManager:
 
     def step(self, t: int, i: int, deviation: float, threshold: float
               ) -> Tuple[HMMState, float, bool]:
-        """
-        Process one measurement for node i. Returns (decoded_state,
-        anomaly_probability, debt_issued).
-        """
+
         obs = self._discretize(deviation, threshold)
         self._forward_update(i, obs)
         decoded = HMMState(int(np.argmax(self.alpha[i])))
@@ -161,7 +133,7 @@ class TemporalDebtManager:
         candidates = self.neighbors[issuer]
         if not candidates:
             return False
-        # Acceptor = neighbor with the minimum current debt load.
+
         loads = [(self.debt_load[j], j) for j in candidates]
         loads.sort()
         acceptor = loads[0][1]
@@ -179,9 +151,6 @@ class TemporalDebtManager:
 
     def settle_due_debts(self, t: int, deviations_at_t: np.ndarray,
                           thresholds: np.ndarray):
-        """Check debts due at time t; a debt is 'confirmed' if the
-        acceptor's own deviation at t exceeds its threshold (i.e., the
-        forecasted anomaly materialized), refuted otherwise."""
         for debt in self.debts_issued:
             if debt["due"] == t and debt["confirmed"] is None:
                 acc = debt["acceptor"]
